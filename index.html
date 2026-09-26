@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Мотокросс Захара</title>
+<style>
+  :root {
+    --sky: #7fb8e6;
+    --turq: #3fc6d8;
+    --ink: #10202a;
+    --panel: rgba(12, 28, 38, 0.72);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #3d5a26; color: #fff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  #game { display: block; width: 100vw; height: 100vh; }
+
+  .overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; padding: 16px;
+    background: linear-gradient(180deg, var(--sky) 0%, #cfe6f5 55%, #8a6d4f 55%, #6e5238 100%);
+    color: var(--ink); text-align: center; z-index: 10;
+  }
+  .overlay h1 {
+    margin: 0; font-size: clamp(28px, 7vw, 56px); font-weight: 900; letter-spacing: 1px;
+    color: #fff; text-shadow: 0 3px 0 #1a8a9a, 0 6px 14px rgba(0,0,0,.35);
+  }
+  #portrait { width: min(420px, 92vw); height: auto; }
+  .card {
+    background: rgba(255,255,255,.88); border-radius: 14px; padding: 10px 16px;
+    max-width: 520px; font-size: 15px; line-height: 1.45;
+  }
+  .card b { color: #0f7f90; }
+  button.big {
+    font: inherit; font-size: 24px; font-weight: 800; padding: 12px 40px;
+    border: none; border-radius: 999px; cursor: pointer;
+    background: var(--turq); color: #062a31;
+    box-shadow: 0 5px 0 #1a8a9a, 0 8px 18px rgba(0,0,0,.3);
+  }
+  button.big:active { transform: translateY(3px); box-shadow: 0 2px 0 #1a8a9a; }
+  .hidden { display: none !important; }
+
+  #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .tbtn {
+    position: absolute; pointer-events: auto; width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(255,255,255,.22); border: 3px solid rgba(255,255,255,.55);
+    color: #fff; font-size: 30px; font-weight: 800; display: flex;
+    align-items: center; justify-content: center; text-shadow: 0 2px 4px rgba(0,0,0,.5);
+  }
+  .tbtn.on { background: rgba(63,198,216,.6); }
+  .tbtn small { font-size: 15px; }
+  #tLeft  { left: 16px;  bottom: 24px; }
+  #tRight { left: 112px; bottom: 24px; }
+  #tGas   { right: 16px; bottom: 24px; width: 100px; height: 100px; background: rgba(60,200,90,.35); }
+  #tBrake { right: 128px; bottom: 24px; background: rgba(220,60,60,.35); }
+  #tHop   { right: 36px; bottom: 138px; width: 64px; height: 64px; font-size: 14px; }
+  #hudBtns { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 6; }
+  @media (max-width: 600px) {
+    #hudBtns { top: 112px; left: 10px; transform: none; }
+    .tbtn { width: 72px; height: 72px; }
+    #tLeft { left: 12px; } #tRight { left: 92px; }
+    #tBrake { right: 110px; } #tGas { width: 88px; height: 88px; right: 12px; }
+    #tHop { right: 24px; bottom: 124px; }
+  }
+  #hudBtns button {
+    font: inherit; font-size: 16px; border: none; border-radius: 10px; padding: 6px 10px;
+    background: var(--panel); color: #fff; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hudBtns" class="hidden">
+  <button id="btnSound" title="Звук (M)">🔊</button>
+  <button id="btnRestart" title="Заново (R)">↺</button>
+</div>
+
+<div id="touch" class="hidden">
+  <div class="tbtn" id="tLeft" data-k="left">◀</div>
+  <div class="tbtn" id="tRight" data-k="right">▶</div>
+  <div class="tbtn" id="tBrake" data-k="brake"><small>ТОРМОЗ</small></div>
+  <div class="tbtn" id="tGas" data-k="gas"><small>ГАЗ</small></div>
+  <div class="tbtn" id="tHop" data-k="hop">ПРЫГ</div>
+</div>
+
+<div id="title" class="overlay">
+  <h1>Мотокросс Захара</h1>
+  <canvas id="portrait" width="420" height="300"></canvas>
+  <div class="card">
+    Катайся по карте, собирай <b>звёзды ★</b>, прыгай с <b>трамплинов</b>
+    и проезжай круги через <b>флажки</b> на время!<br>
+    <b>←&nbsp;→</b> руль &nbsp;·&nbsp; <b>↑</b> газ &nbsp;·&nbsp; <b>↓</b> тормоз / назад &nbsp;·&nbsp;
+    <b>Пробел</b> прыжок &nbsp;·&nbsp; <b>R</b> заново &nbsp;·&nbsp; <b>M</b> звук
+  </div>
+  <button class="big" id="startBtn">Поехали!</button>
+</div>
+
+<script>
+'use strict';
+(() => {
+// =====================================================================
+//  Мир
+// =====================================================================
+const W = 3000, H = 3000;
+const GS = 0.5;   // масштаб холста с землёй
+const MS = 0.1;   // масштаб маски покрытия (1 клетка = 10 единиц)
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(20260926);
+const rr = (a, b) => a + rand() * (b - a);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function catmull(pts, closed, per) {
+  const out = [], n = pts.length, segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const p1 = pts[i], p2 = pts[(i + 1) % n];
+    const p0 = closed ? pts[(i - 1 + n) % n] : (i === 0 ? p1 : pts[i - 1]);
+    const p3 = closed ? pts[(i + 2) % n] : (i + 2 >= n ? p2 : pts[i + 2]);
+    for (let k = 0; k < per; k++) {
+      const t = k / per, t2 = t * t, t3 = t2 * t;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  if (!closed) out.push(pts[n - 1].slice());
+  return out;
+}
+
+// Главная трасса (кольцо)
+const loop = catmull([
+  [620, 2330], [450, 1500], [700, 700], [1400, 450], [2300, 520], [2620, 1100],
+  [2100, 1500], [2560, 2000], [2380, 2620], [1600, 2680], [1300, 2150], [950, 2480]
+], true, 40);
+const N = loop.length;
+
+const roads = [
+  { pts: loop, closed: true, w: 150 },
+  { pts: catmull([[455, 1500], [1000, 1380], [1600, 1560], [2100, 1500]], false, 24), w: 110 },
+  { pts: catmull([[1400, 450], [1350, 1000], [1600, 1560], [1300, 2150]], false, 24), w: 100 },
+  { pts: catmull([[330, 2620], [470, 2470], [620, 2330]], false, 12), w: 120 },
+];
+const yard = { x: 90, y: 2440, w: 420, h: 420 };
+
+function dirAt(i) {
+  const a = loop[(i - 2 + N) % N], b = loop[(i + 2) % N];
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+  return [dx / l, dy / l];
+}
+
+// Трамплины
+const ramps = [0.09, 0.24, 0.41, 0.57, 0.73, 0.88].map(f => {
+  const i = Math.floor(f * N);
+  const [dx, dy] = dirAt(i);
+  return { i, x: loop[i][0], y: loop[i][1], dx, dy, len: 70, wid: 104 };
+});
+
+// Лужи (как на фото — много луж на грунтовке)
+const puddles = [];
+for (let tries = 0; puddles.length < 30 && tries < 500; tries++) {
+  const i = Math.floor(rand() * N);
+  if (ramps.some(r => Math.min(Math.abs(r.i - i), N - Math.abs(r.i - i)) < 9)) continue;
+  if (Math.min(i, N - i) < 10) continue;
+  const [dx, dy] = dirAt(i), off = rr(-40, 40);
+  const x = loop[i][0] - dy * off, y = loop[i][1] + dx * off;
+  if (puddles.some(p => Math.hypot(p.x - x, p.y - y) < 130)) continue;
+  puddles.push({ x, y, rx: rr(28, 62), ry: rr(18, 34), a: Math.atan2(dy, dx) + rr(-0.4, 0.4) });
+}
+// лужи во дворе у гаражей
+puddles.push({ x: 300, y: 2560, rx: 55, ry: 25, a: 0.3 }, { x: 420, y: 2700, rx: 40, ry: 20, a: -0.2 });
+
+// Постройки (как на фото: гаражи, дом с красной крышей, бело-синее здание, грузовик)
+const buildings = [
+  { x: 110, y: 2735, w: 290, h: 115, type: 'garage' },
+  { x: 100, y: 2450, w: 150, h: 115, type: 'red' },
+  { x: 1780, y: 2780, w: 260, h: 140, type: 'blue' },
+  { x: 380, y: 2465, w: 110, h: 50, type: 'truck' },
+];
+
+// =====================================================================
+//  Маска покрытия: 0 трава, 1 грунт, 2 лужа
+// =====================================================================
+const MW = Math.round(W * MS), MH = Math.round(H * MS);
+const surf = new Uint8Array(MW * MH);
+function traceRoad(c, r) {
+  c.beginPath();
+  c.moveTo(r.pts[0][0], r.pts[0][1]);
+  for (let i = 1; i < r.pts.length; i++) c.lineTo(r.pts[i][0], r.pts[i][1]);
+  if (r.closed) c.closePath();
+}
+function tracePuddle(c, p, grow = 0) {
+  c.beginPath();
+  c.ellipse(p.x, p.y, p.rx + grow, p.ry + grow, p.a, 0, Math.PI * 2);
+}
+{
+  const m = document.createElement('canvas');
+  m.width = MW; m.height = MH;
+  const c = m.getContext('2d', { willReadFrequently: true });
+  c.fillStyle = '#000'; c.fillRect(0, 0, MW, MH);
+  c.scale(MS, MS);
+  c.lineJoin = c.lineCap = 'round';
+  c.strokeStyle = '#f00';
+  for (const r of roads) { c.lineWidth = r.w; traceRoad(c, r); c.stroke(); }
+  c.fillStyle = '#f00'; c.fillRect(yard.x, yard.y, yard.w, yard.h);
+  c.fillStyle = '#00f';
+  for (const p of puddles) { tracePuddle(c, p); c.fill(); }
+  const d = c.getImageData(0, 0, MW, MH).data;
+  for (let i = 0; i < MW * MH; i++) surf[i] = d[i * 4 + 2] > 128 ? 2 : d[i * 4] > 110 ? 1 : 0;
+}
+function surfaceAt(x, y) {
+  const ix = clamp(Math.floor(x * MS), 0, MW - 1), iy = clamp(Math.floor(y * MS), 0, MH - 1);
+  return surf[iy * MW + ix];
+}
+function nearDirt(x, y, r) {
+  for (let a = 0; a < 8; a++) {
+    const ang = a / 8 * Math.PI * 2;
+    if (surfaceAt(x + Math.cos(ang) * r, y + Math.sin(ang) * r)) return true;
+  }
+  return surfaceAt(x, y) !== 0;
+}
+function inBuilding(x, y, pad) {
+  return buildings.some(b => x > b.x - pad && x < b.x + b.w + pad && y > b.y - pad && y < b.y + b.h + pad);
+}
+
+// Деревья (как вдоль дороги на фото)
+const trees = [];
+for (let tries = 0; trees.length < 260 && tries < 6000; tries++) {
+  const x = rr(40, W - 40), y = rr(40, H - 40), r = rr(22, 42);
+  if (nearDirt(x, y, r + 30)) continue;
+  if (inBuilding(x, y, r + 30)) continue;
+  if (trees.some(t => Math.hypot(t.x - x, t.y - y) < t.r + r + 10)) continue;
+  trees.push({ x, y, r, v: Math.floor(rand() * 4) });
+}
+
+// Звёзды
+const starSpots = [];
+for (let k = 0; k < 32; k++) {
+  const i = Math.floor((k + 0.5) / 32 * N);
+  const [dx, dy] = dirAt(i), off = rr(-45, 45);
+  starSpots.push({ x: loop[i][0] - dy * off, y: loop[i][1] + dx * off });
+}
+for (let tries = 0; starSpots.length < 44 && tries < 3000; tries++) {
+  const x = rr(150, W - 150), y = rr(150, H - 150);
+  if (trees.some(t => Math.hypot(t.x - x, t.y - y) < t.r + 60)) continue;
+  if (inBuilding(x, y, 60) || surfaceAt(x, y)) continue;
+  if (starSpots.some(s => Math.hypot(s.x - x, s.y - y) < 250)) continue;
+  starSpots.push({ x, y });
+}
+
+// Флажки-контрольные точки
+const cps = [0, Math.floor(N / 4), Math.floor(N / 2), Math.floor(3 * N / 4)];
+
+// =====================================================================
+//  Рисование земли (один раз)
+// =====================================================================
+const ground = document.createElement('canvas');
+ground.width = W * GS; ground.height = H * GS;
+const gctx = ground.getContext('2d');
+{
+  const c = gctx;
+  c.scale(GS, GS);
+  c.fillStyle = '#6f9a3a'; c.fillRect(0, 0, W, H);
+  const greens = ['#628c33', '#7aa644', '#5b8430', '#86b04c', '#6a9538'];
+  for (let i = 0; i < 2600; i++) {
+    c.globalAlpha = rr(0.15, 0.45);
+    c.fillStyle = greens[i % greens.length];
+    c.beginPath(); c.arc(rr(0, W), rr(0, H), rr(10, 70), 0, Math.PI * 2); c.fill();
+  }
+  c.globalAlpha = 0.5; c.strokeStyle = '#4e7a28'; c.lineWidth = 2;
+  for (let i = 0; i < 9000; i++) {
+    const x = rr(0, W), y = rr(0, H);
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + rr(-3, 3), y - rr(4, 9)); c.stroke();
+  }
+  // полевые цветы
+  c.globalAlpha = 0.9;
+  for (let i = 0; i < 700; i++) {
+    c.fillStyle = ['#fff', '#ffe066', '#f7a8d0', '#c9b6ff'][i % 4];
+    c.beginPath(); c.arc(rr(0, W), rr(0, H), rr(1.5, 3), 0, Math.PI * 2); c.fill();
+  }
+  c.globalAlpha = 1;
+
+  // грунт
+  c.lineJoin = c.lineCap = 'round';
+  for (const r of roads) { c.strokeStyle = '#5f4a36'; c.lineWidth = r.w + 16; traceRoad(c, r); c.stroke(); }
+  c.fillStyle = '#5f4a36'; c.fillRect(yard.x - 8, yard.y - 8, yard.w + 16, yard.h + 16);
+  for (const r of roads) { c.strokeStyle = '#8a6d50'; c.lineWidth = r.w; traceRoad(c, r); c.stroke(); }
+  c.fillStyle = '#8a6d50'; c.fillRect(yard.x, yard.y, yard.w, yard.h);
+  // бетонная площадка у гаражей
+  c.fillStyle = '#a9a39a'; c.fillRect(110, 2690, 290, 45);
+
+  // фактура грязи
+  const muds = ['#735a41', '#9a7c5c', '#6b533c', '#a5886a', '#7d6248'];
+  for (let i = 0; i < 26000; i++) {
+    const x = rr(0, W), y = rr(0, H);
+    if (surfaceAt(x, y) !== 1) continue;
+    c.globalAlpha = rr(0.2, 0.55);
+    c.fillStyle = muds[i % muds.length];
+    c.beginPath(); c.ellipse(x, y, rr(2, 12), rr(1.5, 6), rr(0, 3), 0, Math.PI * 2); c.fill();
+  }
+  // колеи вдоль трассы
+  c.globalAlpha = 0.35; c.strokeStyle = '#4f3c2b'; c.lineWidth = 5;
+  for (const off of [-38, -26, 22, 34]) {
+    c.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const j = i % N, [dx, dy] = dirAt(j);
+      const x = loop[j][0] - dy * off, y = loop[j][1] + dx * off;
+      i ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+    c.stroke();
+  }
+  c.globalAlpha = 1;
+
+  // лужи с отражением неба
+  for (const p of puddles) {
+    c.fillStyle = '#4d3a29'; tracePuddle(c, p, 5); c.fill();
+    const g = c.createRadialGradient(p.x - p.rx * 0.3, p.y - p.ry * 0.3, 2, p.x, p.y, p.rx);
+    g.addColorStop(0, '#d7ecfb'); g.addColorStop(0.5, '#93bfe0'); g.addColorStop(1, '#6d8aa0');
+    c.fillStyle = g; tracePuddle(c, p); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.55)';
+    c.beginPath(); c.ellipse(p.x + p.rx * 0.2, p.y - p.ry * 0.1, p.rx * 0.35, p.ry * 0.25, p.a, 0, Math.PI * 2); c.fill();
+  }
+
+  // кусты (декор)
+  for (let i = 0; i < 500; i++) {
+    const x = rr(0, W), y = rr(0, H);
+    if (nearDirt(x, y, 20) || inBuilding(x, y, 20)) continue;
+    c.fillStyle = 'rgba(40,70,20,.35)';
+    c.beginPath(); c.arc(x + 4, y + 5, 12, 0, Math.PI * 2); c.fill();
+    c.fillStyle = ['#4f7f2a', '#5e9233', '#44722a'][i % 3];
+    for (let k = 0; k < 4; k++) { c.beginPath(); c.arc(x + rr(-8, 8), y + rr(-8, 8), rr(6, 11), 0, Math.PI * 2); c.fill(); }
+  }
+
+  // старт/финиш — шахматная линия
+  {
+    const [dx, dy] = dirAt(0), [x, y] = loop[0];
+    c.save(); c.translate(x, y); c.rotate(Math.atan2(dy, dx));
+    for (let k = -8; k < 8; k++) for (let m = 0; m < 2; m++) {
+      c.fillStyle = (k + m) % 2 ? '#111' : '#fff';
+      c.fillRect(m * 10 - 10, k * 10, 10, 10);
+    }
+    c.restore();
+  }
+}
+
+// Миникарта
+const MINI = 170;
+const mini = document.createElement('canvas');
+mini.width = mini.height = MINI;
+{
+  const c = mini.getContext('2d'), s = MINI / W;
+  c.fillStyle = '#5d8a31'; c.fillRect(0, 0, MINI, MINI);
+  c.save(); c.scale(s, s);
+  c.lineJoin = c.lineCap = 'round'; c.strokeStyle = '#a0805e';
+  for (const r of roads) { c.lineWidth = r.w * 1.3; traceRoad(c, r); c.stroke(); }
+  c.fillStyle = '#a0805e'; c.fillRect(yard.x, yard.y, yard.w, yard.h);
+  c.fillStyle = '#2f5418';
+  for (const t of trees) { c.beginPath(); c.arc(t.x, t.y, t.r * 1.2, 0, Math.PI * 2); c.fill(); }
+  for (const b of buildings) {
+    c.fillStyle = b.type === 'red' ? '#d23b32' : b.type === 'blue' ? '#e9f1f7' : '#c9bfae';
+    c.fillRect(b.x, b.y, b.w, b.h);
+  }
+  c.restore();
+}
+
+// Спрайты деревьев
+const treeSprites = [0, 1, 2, 3].map(v => {
+  const S = 110, cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const c = cv.getContext('2d'), R = rand;
+  const pal = [['#2f5e1c', '#3f7a25', '#5a9a35'], ['#355f22', '#4b8230', '#6aa843'],
+               ['#2a531a', '#3c6e22', '#588f31'], ['#3a6a1f', '#52892b', '#78b24a']][v];
+  for (let layer = 0; layer < 3; layer++) {
+    c.fillStyle = pal[layer];
+    const n = 9 - layer * 2, rad = 50 - layer * 12;
+    for (let k = 0; k < n; k++) {
+      const a = R() * Math.PI * 2, d = R() * rad * 0.45;
+      c.beginPath();
+      c.arc(S / 2 + Math.cos(a) * d - layer * 4, S / 2 + Math.sin(a) * d - layer * 4, rad * (0.45 + R() * 0.2), 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  return cv;
+});
+
+// =====================================================================
+//  Рисование героя: Захар на белом питбайке
+//  бирюзовый шлем, бирюзовая джерси с чёрными полосами, очки,
+//  тёмно-синие штаны, бежевые кроссовки, красная подушка на руле
+// =====================================================================
+const C = {
+  turq: '#3fc6d8', turqDark: '#2596a8', turqLight: '#8ee6f0',
+  stripe: '#121417', pants: '#1f2d52', pantsLight: '#34477a',
+  shoe: '#d8c8aa', bikeWhite: '#f5f5f3', bikeShade: '#cfd2d4',
+  tire: '#1b1b1b', metal: '#b9bec4', red: '#d8262b', skin: '#f1c7a6',
+};
+
+function rrect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+
+// вид сверху, мотоцикл смотрит вправо (+x)
+function drawBikeTop(c, steer, lean, rider = true, accent = C.red) {
+  // заднее колесо
+  c.fillStyle = C.tire; rrect(c, -34, -5.5, 22, 11, 5); c.fill();
+  c.fillStyle = '#333';
+  for (let k = 0; k < 5; k++) c.fillRect(-32 + k * 4, -6.5, 2, 13);
+  // маятник
+  c.fillStyle = C.metal; c.fillRect(-24, -8, 16, 3); c.fillRect(-24, 5, 16, 3);
+  // глушитель (справа)
+  c.fillStyle = '#d6d9dd'; rrect(c, -30, 7, 22, 6, 3); c.fill();
+  c.fillStyle = '#8d9298'; c.fillRect(-31, 8, 3, 4);
+
+  // переднее колесо + руль (поворачиваются)
+  c.save(); c.translate(19, 0); c.rotate(steer * 0.45);
+  c.fillStyle = C.tire; rrect(c, -3, -5, 24, 10, 5); c.fill();
+  c.fillStyle = '#333';
+  for (let k = 0; k < 5; k++) c.fillRect(-1 + k * 4.5, -6, 2, 12);
+  c.fillStyle = C.bikeWhite; rrect(c, 1, -4.5, 16, 9, 4.5); c.fill();
+  c.fillStyle = C.metal; c.fillRect(-3, -6.5, 8, 2.5); c.fillRect(-3, 4, 8, 2.5);
+  c.strokeStyle = '#8f959b'; c.lineWidth = 2.6; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(-5, -16); c.quadraticCurveTo(-2, 0, -5, 16); c.stroke();
+  c.fillStyle = '#111'; rrect(c, -8, -18, 6, 5, 2); c.fill(); rrect(c, -8, 13, 6, 5, 2); c.fill();
+  c.fillStyle = accent; rrect(c, -8, -5.5, 6, 11, 2.5); c.fill();
+  c.restore();
+
+  // корпус
+  c.fillStyle = C.bikeWhite;
+  c.beginPath();
+  c.moveTo(-36, 0); c.quadraticCurveTo(-34, -6, -22, -7);
+  c.lineTo(4, -10); c.quadraticCurveTo(16, -9, 17, 0);
+  c.quadraticCurveTo(16, 9, 4, 10); c.lineTo(-22, 7); c.quadraticCurveTo(-34, 6, -36, 0);
+  c.fill();
+  c.strokeStyle = C.bikeShade; c.lineWidth = 1; c.stroke();
+  // бак (чёрный, как на фото)
+  c.fillStyle = '#1c1c1e';
+  c.beginPath(); c.ellipse(6, 0, 9, 7.5, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = 'rgba(255,255,255,.25)';
+  c.beginPath(); c.ellipse(8, -3, 4, 2, 0, 0, Math.PI * 2); c.fill();
+  // сиденье
+  c.fillStyle = '#2b2b2e'; rrect(c, -27, -4.5, 26, 9, 4); c.fill();
+
+  if (!rider) return;
+
+  c.save(); c.translate(0, lean * 3.5);
+  // ноги
+  for (const s of [-1, 1]) {
+    c.fillStyle = C.pants;
+    c.beginPath(); c.moveTo(-14, s * 4); c.lineTo(2, s * 8.5); c.lineTo(3, s * 13); c.lineTo(-13, s * 10); c.closePath(); c.fill();
+    c.fillStyle = '#0d0f14'; c.beginPath(); c.ellipse(2, s * 11, 3.2, 2.4, 0, 0, Math.PI * 2); c.fill(); // наколенник
+    c.fillStyle = C.shoe; rrect(c, -4, s * 13.5 - 2.5, 9, 5, 2.5); c.fill();
+  }
+  // руки
+  for (const s of [-1, 1]) {
+    c.strokeStyle = C.turq; c.lineWidth = 6; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-6, s * 9); c.lineTo(6, s * 12.5); c.lineTo(13 + steer * 1.5, s * (15 - steer * s * 1.5)); c.stroke();
+    c.strokeStyle = C.stripe; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(-2, s * 10.5); c.lineTo(7, s * 12.8); c.stroke();
+    c.fillStyle = '#16181b';
+    c.beginPath(); c.arc(14 + steer * 1.5, s * (15.5 - steer * s * 1.5), 3.2, 0, Math.PI * 2); c.fill();
+  }
+  // туловище — бирюзовая джерси
+  c.fillStyle = C.turq;
+  c.beginPath(); c.ellipse(-8, 0, 10.5, 11.5, 0, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = C.stripe; c.lineWidth = 2.2;
+  for (const s of [-1, 1]) {
+    c.beginPath(); c.moveTo(-15, s * 7); c.quadraticCurveTo(-9, s * 3, -2, s * 8); c.stroke();
+    c.beginPath(); c.moveTo(-17, s * 3); c.quadraticCurveTo(-12, s * 1, -8, s * 4); c.stroke();
+  }
+  c.strokeStyle = C.turqDark; c.lineWidth = 1; c.beginPath(); c.ellipse(-8, 0, 10.5, 11.5, 0, 0, Math.PI * 2); c.stroke();
+  // шлем
+  c.fillStyle = C.turqDark;
+  c.beginPath(); c.ellipse(2, 0, 9.5, 8.6, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = C.turq;
+  c.beginPath(); c.ellipse(1.5, 0, 8.5, 8, 0, 0, Math.PI * 2); c.fill();
+  // козырёк
+  c.fillStyle = C.turq;
+  c.beginPath(); c.moveTo(6, -6); c.quadraticCurveTo(15, -4, 15, 0); c.quadraticCurveTo(15, 4, 6, 6); c.closePath(); c.fill();
+  c.strokeStyle = C.turqDark; c.lineWidth = 1; c.stroke();
+  // полоски и блик на шлеме
+  c.strokeStyle = '#0e3c44'; c.lineWidth = 1.4;
+  c.beginPath(); c.moveTo(-5, 0); c.lineTo(9, 0); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,.6)';
+  c.beginPath(); c.ellipse(-0.5, -3.5, 3.5, 1.8, -0.3, 0, Math.PI * 2); c.fill();
+  c.restore();
+}
+
+// вид сбоку — для заставки
+function drawRiderSide(c) {
+  const wheel = (x, y, r) => {
+    c.fillStyle = C.tire; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    for (let k = 0; k < 22; k++) {
+      const a = k / 22 * Math.PI * 2;
+      c.save(); c.translate(x + Math.cos(a) * r, y + Math.sin(a) * r); c.rotate(a);
+      c.fillRect(-3, -3, 5, 6); c.restore();
+    }
+    c.fillStyle = '#3a3a3a'; c.beginPath(); c.arc(x, y, r * 0.72, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#16161a'; c.beginPath(); c.arc(x, y, r * 0.64, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#8a8f96'; c.lineWidth = 1;
+    for (let k = 0; k < 16; k++) {
+      const a = k / 16 * Math.PI * 2;
+      c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * r * 0.64, y + Math.sin(a) * r * 0.64); c.stroke();
+    }
+    c.fillStyle = C.metal; c.beginPath(); c.arc(x, y, 7, 0, Math.PI * 2); c.fill();
+  };
+  // тень
+  c.fillStyle = 'rgba(40,25,10,.35)';
+  c.beginPath(); c.ellipse(210, 276, 170, 12, 0, 0, Math.PI * 2); c.fill();
+  wheel(112, 232, 44); wheel(318, 232, 44);
+  // маятник
+  c.strokeStyle = '#9ea4ab'; c.lineWidth = 9; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(112, 232); c.lineTo(190, 205); c.stroke();
+  // вилка
+  c.strokeStyle = '#c9cdd2'; c.lineWidth = 9;
+  c.beginPath(); c.moveTo(318, 232); c.lineTo(283, 128); c.stroke();
+  c.strokeStyle = '#262626'; c.lineWidth = 11;
+  c.beginPath(); c.moveTo(310, 208); c.lineTo(296, 166); c.stroke();
+  // двигатель
+  c.fillStyle = '#4b4f55'; rrect(c, 170, 180, 60, 45, 10); c.fill();
+  c.fillStyle = '#6c7178'; rrect(c, 180, 188, 22, 26, 6); c.fill();
+  // рама
+  c.strokeStyle = '#a9aeb4'; c.lineWidth = 7;
+  c.beginPath(); c.moveTo(275, 140); c.lineTo(225, 190); c.moveTo(270, 145); c.lineTo(200, 150); c.stroke();
+  // выхлоп
+  c.strokeStyle = '#c3c7cc'; c.lineWidth = 8;
+  c.beginPath(); c.moveTo(225, 205); c.quadraticCurveTo(170, 220, 150, 185); c.stroke();
+  c.fillStyle = '#d9dcdf'; rrect(c, 68, 162, 88, 24, 12); c.fill();
+  c.fillStyle = '#8d9298'; rrect(c, 60, 166, 14, 16, 5); c.fill();
+  // заднее крыло + боковина (белые)
+  c.fillStyle = C.bikeWhite;
+  c.beginPath(); c.moveTo(208, 150); c.lineTo(120, 150); c.lineTo(50, 132); c.lineTo(58, 146); c.lineTo(125, 168); c.lineTo(200, 185); c.closePath(); c.fill();
+  c.strokeStyle = '#b8bcc0'; c.lineWidth = 1.5; c.stroke();
+  // сиденье
+  c.fillStyle = '#26262a';
+  c.beginPath(); c.moveTo(118, 146); c.quadraticCurveTo(160, 134, 225, 140); c.lineTo(222, 150); c.lineTo(120, 152); c.closePath(); c.fill();
+  // бак чёрный + белый пластик
+  c.fillStyle = '#1b1b1d';
+  c.beginPath(); c.moveTo(215, 140); c.quadraticCurveTo(240, 118, 272, 130); c.lineTo(262, 160); c.lineTo(222, 165); c.closePath(); c.fill();
+  c.fillStyle = C.bikeWhite;
+  c.beginPath(); c.moveTo(225, 152); c.lineTo(275, 138); c.lineTo(282, 170); c.lineTo(240, 182); c.closePath(); c.fill();
+  c.strokeStyle = '#b8bcc0'; c.stroke();
+  // переднее крыло
+  c.fillStyle = C.bikeWhite;
+  c.beginPath(); c.moveTo(282, 178); c.quadraticCurveTo(318, 168, 360, 180); c.lineTo(356, 186); c.quadraticCurveTo(318, 178, 290, 188); c.closePath(); c.fill();
+  // номерной щиток
+  c.fillStyle = C.bikeWhite;
+  c.beginPath(); c.moveTo(280, 125); c.lineTo(300, 118); c.lineTo(306, 158); c.lineTo(290, 162); c.closePath(); c.fill();
+  // руль с красной подушкой
+  c.strokeStyle = '#8f959b'; c.lineWidth = 6;
+  c.beginPath(); c.moveTo(283, 128); c.lineTo(276, 108); c.stroke();
+  c.fillStyle = C.red; rrect(c, 262, 100, 30, 10, 5); c.fill();
+
+  // --- Захар ---
+  // нога
+  c.fillStyle = C.pants;
+  c.beginPath(); c.moveTo(150, 150); c.quadraticCurveTo(190, 128, 232, 160); c.lineTo(222, 176); c.quadraticCurveTo(190, 158, 160, 168); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(232, 160); c.lineTo(222, 176); c.lineTo(205, 236); c.lineTo(190, 232); c.closePath(); c.fill();
+  c.fillStyle = C.pantsLight; c.fillRect(200, 180, 5, 40);
+  c.fillStyle = '#101216'; rrect(c, 212, 152, 24, 30, 9); c.fill(); // наколенник
+  // кроссовок
+  c.fillStyle = C.shoe; rrect(c, 184, 228, 36, 16, 7); c.fill();
+  c.fillStyle = '#fff'; c.fillRect(188, 226, 10, 5); // белый носок
+  c.fillStyle = '#8c7a5c'; c.fillRect(184, 240, 36, 4);
+  // туловище (джерси)
+  c.fillStyle = C.turq;
+  c.beginPath(); c.moveTo(145, 155); c.quadraticCurveTo(140, 100, 180, 76); c.quadraticCurveTo(210, 70, 222, 95);
+  c.quadraticCurveTo(210, 130, 200, 158); c.closePath(); c.fill();
+  c.strokeStyle = C.stripe; c.lineWidth = 7; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(152, 120); c.quadraticCurveTo(175, 105, 205, 118); c.stroke();
+  c.beginPath(); c.moveTo(150, 142); c.quadraticCurveTo(172, 128, 200, 142); c.stroke();
+  c.lineWidth = 4; c.beginPath(); c.moveTo(165, 95); c.lineTo(190, 104); c.stroke();
+  // рука
+  c.strokeStyle = C.turq; c.lineWidth = 17;
+  c.beginPath(); c.moveTo(196, 92); c.quadraticCurveTo(232, 118, 266, 106); c.stroke();
+  c.strokeStyle = C.stripe; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(214, 110); c.lineTo(222, 100); c.moveTo(232, 116); c.lineTo(238, 104); c.stroke();
+  c.fillStyle = '#16181b'; c.beginPath(); c.arc(270, 104, 10, 0, Math.PI * 2); c.fill(); // перчатка
+  c.fillStyle = '#fff'; c.fillRect(266, 98, 3, 8);
+  // шея/воротник
+  c.fillStyle = '#16181b'; rrect(c, 184, 64, 24, 16, 6); c.fill();
+  // шлем
+  c.fillStyle = C.turq;
+  c.beginPath(); c.arc(198, 40, 34, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.moveTo(210, 55); c.quadraticCurveTo(238, 58, 236, 76); c.lineTo(200, 76); c.closePath(); c.fill(); // подбородок
+  c.fillStyle = C.turqDark;
+  c.beginPath(); c.moveTo(214, 10); c.lineTo(250, 18); c.lineTo(246, 27); c.lineTo(214, 24); c.closePath(); c.fill(); // козырёк
+  // окно шлема + лицо + очки
+  c.fillStyle = '#222'; rrect(c, 204, 30, 30, 26, 9); c.fill();
+  c.fillStyle = C.skin; rrect(c, 207, 33, 25, 20, 7); c.fill();
+  c.strokeStyle = '#1a1a1a'; c.lineWidth = 2.4;
+  c.beginPath(); c.arc(224, 41, 5.5, 0, Math.PI * 2); c.stroke();
+  c.beginPath(); c.moveTo(218, 41); c.lineTo(210, 39); c.stroke();
+  c.fillStyle = 'rgba(200,230,255,.5)'; c.beginPath(); c.arc(224, 41, 4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#2a1a10'; c.beginPath(); c.arc(225, 42, 1.6, 0, Math.PI * 2); c.fill();
+  // узоры шлема
+  c.fillStyle = C.turqLight; c.beginPath(); c.ellipse(186, 20, 12, 6, -0.5, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#e8e24a'; c.beginPath(); c.arc(184, 50, 6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#1e7a3a'; c.beginPath(); c.arc(184, 50, 3, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#0e3c44'; c.lineWidth = 2;
+  c.beginPath(); c.arc(198, 40, 34, Math.PI * 0.55, Math.PI * 1.25); c.stroke();
+}
+
+// =====================================================================
+//  Состояние игры
+// =====================================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let vw = 0, vh = 0, dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  vw = window.innerWidth; vh = window.innerHeight;
+  canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+}
+window.addEventListener('resize', resize); resize();
+
+const bike = {};
+let stars, score, laps, lapStart, bestLap, nextCp, particles, floaters, banner, shake, camX, camY, zoom, prevRear, lastTs, running = false, stuckTimer = 0;
+try { bestLap = parseFloat(localStorage.getItem('zakhar_best_lap')) || null; } catch (e) { bestLap = null; }
+
+function reset() {
+  const i = N - 6, j = N - 5;
+  Object.assign(bike, {
+    x: loop[i][0], y: loop[i][1], a: Math.atan2(loop[j][1] - loop[i][1], loop[j][0] - loop[i][0]),
+    vx: 0, vy: 0, z: 0, vz: 0, steer: 0, air: 0, hopCd: 0, surface: 1,
+  });
+  stars = starSpots.map(s => ({ x: s.x, y: s.y, got: false }));
+  score = 0; laps = 0; lapStart = null; nextCp = 0;
+  particles = []; floaters = []; banner = null; shake = 0;
+  camX = bike.x; camY = bike.y; zoom = 1; prevRear = null;
+}
+reset();
+
+// =====================================================================
+//  Управление
+// =====================================================================
+const keys = {};
+const touchKeys = { left: false, right: false, gas: false, brake: false, hop: false };
+const keyMap = {
+  ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake',
+  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'hop',
+};
+window.addEventListener('keydown', e => {
+  if (keyMap[e.code]) { keys[keyMap[e.code]] = true; e.preventDefault(); }
+  if (e.code === 'KeyR' && running) reset();
+  if (e.code === 'KeyM') toggleSound();
+  if (e.code === 'Enter' && !running) start();
+});
+window.addEventListener('keyup', e => { if (keyMap[e.code]) keys[keyMap[e.code]] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+const input = k => !!(keys[k] || touchKeys[k]);
+
+document.querySelectorAll('.tbtn').forEach(el => {
+  const k = el.dataset.k;
+  const on = e => { e.preventDefault(); touchKeys[k] = true; el.classList.add('on'); try { el.setPointerCapture(e.pointerId); } catch (_) {} };
+  const off = e => { e.preventDefault(); touchKeys[k] = false; el.classList.remove('on'); };
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+  el.addEventListener('lostpointercapture', off);
+});
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+
+// =====================================================================
+//  Звук
+// =====================================================================
+let audio = null, engine = null, muted = false;
+function initAudio() {
+  if (audio) return;
+  try {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    const o1 = audio.createOscillator(), o2 = audio.createOscillator();
+    const f = audio.createBiquadFilter(), g = audio.createGain();
+    o1.type = 'sawtooth'; o2.type = 'square';
+    f.type = 'lowpass'; f.frequency.value = 900;
+    g.gain.value = 0;
+    o1.connect(f); o2.connect(f); f.connect(g); g.connect(audio.destination);
+    o1.start(); o2.start();
+    engine = { o1, o2, f, g };
+  } catch (e) { audio = null; }
+}
+function beep(freq, dur, type = 'sine', vol = 0.15, to = null) {
+  if (!audio || muted) return;
+  const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + dur);
+}
+function toggleSound() {
+  muted = !muted;
+  document.getElementById('btnSound').textContent = muted ? '🔇' : '🔊';
+}
+document.getElementById('btnSound').addEventListener('click', toggleSound);
+document.getElementById('btnRestart').addEventListener('click', () => reset());
+
+// =====================================================================
+//  Эффекты
+// =====================================================================
+function addParticle(x, y, vx, vy, vz, life, color, size) {
+  if (particles.length > 500) particles.shift();
+  particles.push({ x, y, z: 2, vx, vy, vz, life, max: life, color, size });
+}
+function floatText(text, x, y, color = '#ffe14d') { floaters.push({ text, x, y, t: 0, color }); }
+function showBanner(text, color = '#fff') { banner = { text, color, t: 0 }; }
+const fmt = s => {
+  const m = Math.floor(s / 60), sec = s - m * 60;
+  return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(2);
+};
+
+// =====================================================================
+//  Физика
+// =====================================================================
+const BIKE_R = 20;
+function collide() {
+  if (bike.z > 26) return;
+  let hit = 0;
+  const push = (nx, ny, depth) => {
+    bike.x += nx * depth; bike.y += ny * depth;
+    const vn = bike.vx * nx + bike.vy * ny;
+    if (vn < 0) {
+      bike.vx -= 1.4 * vn * nx; bike.vy -= 1.4 * vn * ny;
+      bike.vx *= 0.6; bike.vy *= 0.6;
+      hit = Math.max(hit, -vn);
+    }
+  };
+  const tr = BIKE_R + 60;
+  for (const t of trees) {
+    const dx = bike.x - t.x, dy = bike.y - t.y;
+    if (Math.abs(dx) > tr || Math.abs(dy) > tr) continue;
+    const d = Math.hypot(dx, dy), min = t.r * 0.55 + BIKE_R;
+    if (d < min && d > 0.01) push(dx / d, dy / d, min - d);
+  }
+  for (const b of buildings) {
+    const cx = clamp(bike.x, b.x, b.x + b.w), cy = clamp(bike.y, b.y, b.y + b.h);
+    const dx = bike.x - cx, dy = bike.y - cy, d = Math.hypot(dx, dy);
+    if (d < BIKE_R) {
+      if (d > 0.01) push(dx / d, dy / d, BIKE_R - d);
+      else push(0, 1, BIKE_R);
+    }
+  }
+  const m = 30;
+  if (bike.x < m) push(1, 0, m - bike.x);
+  if (bike.x > W - m) push(-1, 0, bike.x - (W - m));
+  if (bike.y < m) push(0, 1, m - bike.y);
+  if (bike.y > H - m) push(0, -1, bike.y - (H - m));
+  if (hit > 60) {
+    shake = Math.min(12, hit / 25);
+    beep(90, 0.18, 'square', 0.12, 40);
+    if (hit > 200) floatText('Бум!', bike.x, bike.y - 30, '#ff8a5c');
+  }
+}
+
+function update(dt, now) {
+  const gas = input('gas'), brake = input('brake');
+  const steerIn = (input('right') ? 1 : 0) - (input('left') ? 1 : 0);
+  bike.steer = lerp(bike.steer, steerIn, Math.min(1, dt * 10));
+
+  const fx = Math.cos(bike.a), fy = Math.sin(bike.a);
+  let fwd = bike.vx * fx + bike.vy * fy;
+  let lat = -bike.vx * fy + bike.vy * fx;
+  const s = surfaceAt(bike.x, bike.y);
+  bike.surface = s;
+
+  if (bike.z <= 0) {
+    const grip = s === 2 ? 0.35 : s === 0 ? 0.75 : 1;
+    const maxSpd = s === 2 ? 330 : s === 0 ? 360 : 540;
+    const accel = s === 0 ? 380 : 470;
+    // руль
+    const turn = 2.9 * clamp(Math.abs(fwd) / 140, 0, 1) * (fwd >= 0 ? 1 : -1);
+    bike.a += bike.steer * turn * dt * (s === 2 ? 0.8 : 1);
+    // газ / тормоз
+    if (gas) fwd += accel * dt;
+    if (brake) {
+      if (fwd > 10) fwd -= 900 * dt;
+      else fwd = Math.max(fwd - 260 * dt, -140);
+    }
+    fwd -= fwd * (accel / maxSpd) * dt * (gas ? 1 : 1.4);
+    if (!gas && !brake && Math.abs(fwd) < 6) fwd = 0;
+    lat *= Math.exp(-grip * 7 * dt);
+    // прыжок кнопкой
+    bike.hopCd -= dt;
+    if (input('hop') && bike.hopCd <= 0) {
+      bike.vz = 210 + Math.abs(fwd) * 0.12; bike.z = 0.1; bike.hopCd = 0.6; bike.air = 0;
+      beep(300, 0.12, 'triangle', 0.08, 500);
+    }
+    // трамплины
+    for (const r of ramps) {
+      const dx = bike.x - r.x, dy = bike.y - r.y;
+      const u = dx * r.dx + dy * r.dy, v = -dx * r.dy + dy * r.dx;
+      if (u > 10 && u < r.len / 2 + 6 && Math.abs(v) < r.wid / 2) {
+        const along = bike.vx * r.dx + bike.vy * r.dy;
+        if (along > 120 && bike.z <= 0) {
+          bike.vz = 160 + along * 0.62; bike.z = 0.1; bike.air = 0;
+          beep(200, 0.35, 'sawtooth', 0.07, 520);
+        }
+      }
+    }
+    // грязь, брызги, следы
+    const spd = Math.hypot(bike.vx, bike.vy);
+    const rx = bike.x - fx * 26, ry = bike.y - fy * 26;
+    if (s === 2 && spd > 60 && Math.random() < 0.9) {
+      for (let k = 0; k < 3; k++) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        addParticle(rx, ry, -fx * spd * 0.2 - fy * side * rr(40, 120), -fy * spd * 0.2 + fx * side * rr(40, 120),
+          rr(60, 160), rr(0.4, 0.8), Math.random() < 0.5 ? '#7a5c40' : '#a8cbe6', rr(2, 4));
+      }
+    } else if (s === 1 && spd > 200 && Math.random() < 0.5) {
+      addParticle(rx, ry, -fx * spd * 0.15 + rr(-20, 20), -fy * spd * 0.15 + rr(-20, 20), rr(10, 40), rr(0.5, 1.0), 'rgba(170,140,105,0.6)', rr(5, 10));
+    } else if (s === 0 && spd > 250 && Math.random() < 0.25) {
+      addParticle(rx, ry, -fx * 60, -fy * 60, rr(30, 80), 0.5, '#5d8a31', 2.5);
+    }
+    if (prevRear && spd > 25) {
+      gctx.strokeStyle = s === 0 ? 'rgba(45,75,20,0.22)' : 'rgba(55,38,24,0.32)';
+      gctx.lineWidth = s === 0 ? 4 : 5; gctx.lineCap = 'round';
+      gctx.beginPath(); gctx.moveTo(prevRear[0], prevRear[1]); gctx.lineTo(rx, ry); gctx.stroke();
+    }
+    prevRear = [rx, ry];
+  } else {
+    prevRear = null;
+  }
+
+  bike.vx = fx * fwd - fy * lat;
+  bike.vy = fy * fwd + fx * lat;
+  bike.x += bike.vx * dt; bike.y += bike.vy * dt;
+
+  // полёт
+  if (bike.z > 0) {
+    bike.air += dt;
+    bike.z += bike.vz * dt; bike.vz -= 980 * dt;
+    // немного управления в воздухе
+    bike.a += bike.steer * 0.8 * dt;
+    if (bike.z <= 0) {
+      bike.z = 0;
+      if (bike.air > 0.45) {
+        const pts = Math.round(bike.air * 120 / 10) * 10;
+        score += pts;
+        floatText((bike.air > 1 ? 'Супер прыжок! +' : 'Прыжок! +') + pts, bike.x, bike.y - 40, '#8ef0ff');
+        beep(140, 0.15, 'square', 0.1, 70);
+        for (let k = 0; k < 14; k++) {
+          const a = Math.random() * Math.PI * 2;
+          addParticle(bike.x, bike.y, Math.cos(a) * 90, Math.sin(a) * 90, rr(20, 60), rr(0.4, 0.8), 'rgba(160,130,95,0.7)', rr(4, 8));
+        }
+      }
+      bike.air = 0;
+    }
+  }
+
+  collide();
+
+  // звёзды
+  for (const st of stars) {
+    if (st.got) continue;
+    if (Math.hypot(st.x - bike.x, st.y - bike.y) < 36 + bike.z * 0.1) {
+      st.got = true; score += 100;
+      floatText('+100', st.x, st.y - 20);
+      beep(880, 0.15, 'sine', 0.12, 1760);
+      for (let k = 0; k < 12; k++) {
+        const a = k / 12 * Math.PI * 2;
+        addParticle(st.x, st.y, Math.cos(a) * 140, Math.sin(a) * 140, rr(60, 140), 0.6, '#ffe14d', 3);
+      }
+      const left = stars.filter(q => !q.got).length;
+      if (left === 0) {
+        score += 1000;
+        showBanner('Все звёзды собраны! +1000', '#ffe14d');
+        setTimeout(() => { for (const q of stars) q.got = false; }, 4000);
+      }
+    }
+  }
+
+  // круги
+  const cp = loop[cps[nextCp]];
+  if (Math.hypot(cp[0] - bike.x, cp[1] - bike.y) < 110) {
+    if (nextCp === 0) {
+      if (lapStart === null) {
+        showBanner('Старт! Вперёд!', '#8ef0ff');
+        beep(660, 0.3, 'square', 0.1);
+      } else {
+        const t = (now - lapStart) / 1000;
+        laps++; score += 500;
+        let msg = 'Круг ' + laps + ': ' + fmt(t);
+        if (!bestLap || t < bestLap) {
+          bestLap = t; msg += ' — рекорд!';
+          try { localStorage.setItem('zakhar_best_lap', String(t)); } catch (e) {}
+        }
+        showBanner(msg, '#ffe14d');
+        beep(523, 0.15, 'square', 0.1); setTimeout(() => beep(784, 0.3, 'square', 0.1), 150);
+      }
+      lapStart = now;
+    } else {
+      beep(740, 0.12, 'triangle', 0.1);
+      floatText('Флажок ' + nextCp + '/3', cp[0], cp[1] - 60, '#8ef0ff');
+    }
+    nextCp = (nextCp + 1) % cps.length;
+  }
+
+  // частицы
+  for (const p of particles) {
+    p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    p.z += p.vz * dt; p.vz -= 500 * dt;
+    if (p.z < 0) { p.z = 0; p.vx *= 0.5; p.vy *= 0.5; p.vz = 0; }
+  }
+  particles = particles.filter(p => p.life > 0);
+  for (const f of floaters) f.t += dt;
+  floaters = floaters.filter(f => f.t < 1.4);
+  if (banner) { banner.t += dt; if (banner.t > 3) banner = null; }
+  shake = Math.max(0, shake - dt * 30);
+
+  // камера
+  const spd = Math.hypot(bike.vx, bike.vy);
+  const base = clamp(Math.min(vw, vh) / 640, 0.55, 1.6);
+  zoom = lerp(zoom, base * (1.12 - Math.min(spd, 540) / 540 * 0.25), Math.min(1, dt * 2));
+  camX = lerp(camX, bike.x + bike.vx * 0.3, Math.min(1, dt * 4));
+  camY = lerp(camY, bike.y + bike.vy * 0.3, Math.min(1, dt * 4));
+
+  // звук мотора
+  if (engine && audio) {
+    const t = audio.currentTime;
+    const f = 48 + spd * 0.2 + (gas ? 22 : 0) + (bike.z > 0 && gas ? 40 : 0);
+    engine.o1.frequency.setTargetAtTime(f, t, 0.05);
+    engine.o2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
+    engine.f.frequency.setTargetAtTime(500 + spd * 2 + (gas ? 500 : 0), t, 0.05);
+    engine.g.gain.setTargetAtTime(muted ? 0 : 0.035 + (gas ? 0.03 : 0), t, 0.08);
+  }
+}
+
+// =====================================================================
+//  Отрисовка
+// =====================================================================
+function drawStar(c, x, y, r, rot) {
+  c.beginPath();
+  for (let k = 0; k < 10; k++) {
+    const a = rot + k * Math.PI / 5 - Math.PI / 2, rad = k % 2 ? r * 0.45 : r;
+    k ? c.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad) : c.moveTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad);
+  }
+  c.closePath();
+}
+
+function drawRamp(c, r) {
+  c.save(); c.translate(r.x, r.y); c.rotate(Math.atan2(r.dy, r.dx));
+  const L = r.len, Wd = r.wid;
+  c.fillStyle = 'rgba(0,0,0,.28)'; c.fillRect(-L / 2 + 6, -Wd / 2 + 8, L, Wd);
+  const g = c.createLinearGradient(-L / 2, 0, L / 2, 0);
+  g.addColorStop(0, '#8b6a45'); g.addColorStop(1, '#d0a56e');
+  c.fillStyle = g; c.fillRect(-L / 2, -Wd / 2, L, Wd);
+  c.strokeStyle = 'rgba(80,55,30,.7)'; c.lineWidth = 2;
+  for (let k = -L / 2 + 10; k < L / 2; k += 10) { c.beginPath(); c.moveTo(k, -Wd / 2); c.lineTo(k, Wd / 2); c.stroke(); }
+  c.fillStyle = '#f2d23a'; c.fillRect(L / 2 - 6, -Wd / 2, 6, Wd);
+  c.fillStyle = '#222';
+  for (let k = -Wd / 2; k < Wd / 2; k += 16) c.fillRect(L / 2 - 6, k, 6, 8);
+  // стрелки
+  c.fillStyle = 'rgba(255,255,255,.75)';
+  for (const vv of [-24, 24]) { c.beginPath(); c.moveTo(-10, vv - 9); c.lineTo(12, vv); c.lineTo(-10, vv + 9); c.closePath(); c.fill(); }
+  c.restore();
+}
+
+function drawFlag(c, i, active, label, t) {
+  const [dx, dy] = dirAt(cps[i]), [x, y] = loop[cps[i]];
+  for (const side of [-1, 1]) {
+    const px = x - dy * 90 * side, py = y + dx * 90 * side;
+    c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(px + 5, py + 5, 6, 4, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#eee'; c.beginPath(); c.arc(px, py, 4, 0, Math.PI * 2); c.fill();
+    const wave = Math.sin(t * 6 + side) * 4;
+    c.fillStyle = i === 0 ? (active ? '#fff' : '#bbb') : active ? '#ff3b3b' : '#9a6a6a';
+    c.beginPath(); c.moveTo(px, py); c.lineTo(px + 26, py - 10 + wave); c.lineTo(px + 2, py - 22); c.closePath(); c.fill();
+    if (i === 0) {
+      c.fillStyle = '#111';
+      c.fillRect(px + 4, py - 16, 5, 5); c.fillRect(px + 12, py - 12 + wave * 0.5, 5, 5);
+    }
+  }
+  if (active) {
+    c.strokeStyle = 'rgba(255,230,80,' + (0.45 + Math.sin(t * 5) * 0.25) + ')';
+    c.lineWidth = 6; c.setLineDash([14, 10]);
+    c.beginPath(); c.moveTo(x - dy * 85, y + dx * 85); c.lineTo(x + dy * 85, y - dx * 85); c.stroke();
+    c.setLineDash([]);
+  }
+}
+
+function drawBuilding(c, b) {
+  c.fillStyle = 'rgba(0,0,0,.28)'; c.fillRect(b.x + 12, b.y + 14, b.w, b.h);
+  if (b.type === 'garage') {
+    c.fillStyle = '#d9d0bd'; c.fillRect(b.x, b.y, b.w, b.h);
+    c.fillStyle = '#6a6f73'; c.fillRect(b.x - 6, b.y - 8, b.w + 12, b.h - 30);
+    c.strokeStyle = '#555a5e'; c.lineWidth = 2;
+    for (let x = b.x; x < b.x + b.w; x += 10) { c.beginPath(); c.moveTo(x, b.y - 8); c.lineTo(x, b.y + b.h - 38); c.stroke(); }
+    // навес (как на фото)
+    c.fillStyle = '#4f5559'; c.fillRect(b.x + 20, b.y - 40, 130, 34);
+    c.fillStyle = '#7b5a3a';
+    for (let k = 0; k < 3; k++) c.fillRect(b.x + 20 + k * 92, b.y + b.h - 28, 60, 28);
+    // штабель досок
+    c.fillStyle = '#c9a877'; c.fillRect(b.x + 200, b.y - 34, 40, 22);
+    c.strokeStyle = '#9b7a4d'; for (let k = 0; k < 4; k++) { c.beginPath(); c.moveTo(b.x + 200, b.y - 34 + k * 6); c.lineTo(b.x + 240, b.y - 34 + k * 6); c.stroke(); }
+  } else if (b.type === 'red') {
+    c.fillStyle = '#e4dcc8'; c.fillRect(b.x, b.y + b.h - 18, b.w, 18);
+    c.fillStyle = '#c9322b'; c.fillRect(b.x - 6, b.y - 6, b.w + 12, b.h - 12);
+    c.fillStyle = '#e04238'; c.fillRect(b.x - 6, b.y - 6, b.w + 12, (b.h - 12) / 2);
+    c.strokeStyle = '#8f1f1a'; c.lineWidth = 2;
+    for (let x = b.x; x < b.x + b.w; x += 12) { c.beginPath(); c.moveTo(x, b.y - 6); c.lineTo(x, b.y + b.h - 18); c.stroke(); }
+    c.lineWidth = 4; c.beginPath(); c.moveTo(b.x - 6, b.y + (b.h - 12) / 2 - 6); c.lineTo(b.x + b.w + 6, b.y + (b.h - 12) / 2 - 6); c.stroke();
+  } else if (b.type === 'blue') {
+    c.fillStyle = '#f2f5f8'; c.fillRect(b.x, b.y, b.w, b.h);
+    c.fillStyle = '#3b77c9'; c.fillRect(b.x, b.y, b.w, 16); c.fillRect(b.x, b.y + b.h - 10, b.w, 10);
+    c.fillStyle = '#b7c7d6';
+    for (let x = b.x + 20; x < b.x + b.w - 20; x += 50) c.fillRect(x, b.y + 40, 30, 20);
+    c.fillStyle = '#8fa4b8'; c.fillRect(b.x + b.w - 50, b.y + 70, 30, 30);
+  } else if (b.type === 'truck') {
+    c.fillStyle = '#5a5f45'; c.fillRect(b.x, b.y, b.w - 28, b.h);
+    c.strokeStyle = '#3f432f'; c.lineWidth = 2;
+    for (let x = b.x + 8; x < b.x + b.w - 28; x += 12) { c.beginPath(); c.moveTo(x, b.y); c.lineTo(x, b.y + b.h); c.stroke(); }
+    c.fillStyle = '#3d5a6e'; c.fillRect(b.x + b.w - 26, b.y + 2, 26, b.h - 4);
+    c.fillStyle = '#9cc6de'; c.fillRect(b.x + b.w - 8, b.y + 6, 6, b.h - 12);
+  }
+}
+
+function render(t) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#35521f'; ctx.fillRect(0, 0, vw, vh);
+
+  const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+  ctx.save();
+  ctx.translate(vw / 2 + sx, vh / 2 + sy); ctx.scale(zoom, zoom); ctx.translate(-camX, -camY);
+  const hw = vw / 2 / zoom, hh = vh / 2 / zoom;
+  const L = camX - hw - 10, T = camY - hh - 10, R = camX + hw + 10, B = camY + hh + 10;
+  const vis = (x, y, m) => x > L - m && x < R + m && y > T - m && y < B + m;
+
+  // земля
+  const gx0 = clamp(L, 0, W), gy0 = clamp(T, 0, H), gx1 = clamp(R, 0, W), gy1 = clamp(B, 0, H);
+  if (gx1 > gx0 && gy1 > gy0) {
+    ctx.drawImage(ground, gx0 * GS, gy0 * GS, (gx1 - gx0) * GS, (gy1 - gy0) * GS, gx0, gy0, gx1 - gx0, gy1 - gy0);
+  }
+  // забор по краю
+  ctx.strokeStyle = '#7a5a36'; ctx.lineWidth = 8; ctx.strokeRect(12, 12, W - 24, H - 24);
+  ctx.fillStyle = '#5b4228';
+  for (let k = 12; k <= W - 12; k += 60) {
+    for (const [x, y] of [[k, 12], [k, H - 12], [12, k], [W - 12, k]]) if (vis(x, y, 20)) ctx.fillRect(x - 6, y - 6, 12, 12);
+  }
+
+  for (const r of ramps) if (vis(r.x, r.y, 80)) drawRamp(ctx, r);
+  for (let i = 0; i < cps.length; i++) {
+    const p = loop[cps[i]];
+    if (vis(p[0], p[1], 120)) drawFlag(ctx, i, i === nextCp, i, t);
+  }
+
+  // звёзды
+  for (const st of stars) {
+    if (st.got || !vis(st.x, st.y, 30)) continue;
+    const bob = Math.sin(t * 3 + st.x) * 4;
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(st.x + 4, st.y + 8, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd21f'; drawStar(ctx, st.x, st.y - 8 + bob, 16, t * 1.5); ctx.fill();
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.7)'; drawStar(ctx, st.x - 3, st.y - 11 + bob, 5, t * 1.5); ctx.fill();
+  }
+
+  for (const b of buildings) if (vis(b.x + b.w / 2, b.y + b.h / 2, 250)) drawBuilding(ctx, b);
+  // припаркованный красно-белый мотоцикл у гаража (как на фото)
+  if (vis(430, 2700, 60)) {
+    ctx.save(); ctx.translate(430, 2690); ctx.rotate(-1.3);
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(4, 6, 36, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.scale(1.3, 1.3); drawBikeTop(ctx, 0.3, 0, false, '#e23a2a');
+    ctx.restore();
+  }
+
+  // частицы на земле
+  for (const p of particles) {
+    if (p.z > 0.5) continue;
+    ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+    ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const drawTrees = () => {
+    for (const tr of trees) {
+      if (!vis(tr.x, tr.y, tr.r * 1.6)) continue;
+      const s = tr.r * 2.5;
+      ctx.fillStyle = 'rgba(20,40,10,.35)';
+      ctx.beginPath(); ctx.ellipse(tr.x + tr.r * 0.35, tr.y + tr.r * 0.45, tr.r * 1.05, tr.r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.drawImage(treeSprites[tr.v], tr.x - s / 2, tr.y - s / 2, s, s);
+    }
+  };
+  const high = bike.z > 40;
+  if (high) drawTrees();
+
+  // стрелка к следующему флажку
+  {
+    const cp = loop[cps[nextCp]], dx = cp[0] - bike.x, dy = cp[1] - bike.y, d = Math.hypot(dx, dy);
+    if (d > 260) {
+      const a = Math.atan2(dy, dx);
+      ctx.save(); ctx.translate(bike.x + Math.cos(a) * 70, bike.y + Math.sin(a) * 70); ctx.rotate(a);
+      ctx.globalAlpha = 0.75; ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = '#6b5400'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-8, -11); ctx.lineTo(-3, 0); ctx.lineTo(-8, 11); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore(); ctx.globalAlpha = 1;
+    }
+  }
+
+  // тень и мотоцикл с Захаром
+  {
+    const z = bike.z;
+    ctx.save(); ctx.translate(bike.x + z * 0.45, bike.y + z * 0.6); ctx.rotate(bike.a);
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.32 - Math.min(z, 200) / 1000) + ')';
+    ctx.beginPath(); ctx.ellipse(-8, 2, 48 + z * 0.06, 20 + z * 0.04, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.translate(bike.x, bike.y); ctx.rotate(bike.a);
+    const sc = 1.5 * (1 + z / 260);
+    ctx.scale(sc, sc);
+    drawBikeTop(ctx, bike.steer, bike.z > 0 ? bike.steer * 0.5 : bike.steer, true);
+    ctx.restore();
+  }
+
+  // частицы в воздухе
+  for (const p of particles) {
+    if (p.z <= 0.5) continue;
+    ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+    ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y - p.z * 0.4, p.size, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (!high) drawTrees();
+
+  // всплывающие надписи
+  ctx.textAlign = 'center'; ctx.font = 'bold 22px system-ui, sans-serif';
+  for (const f of floaters) {
+    ctx.globalAlpha = clamp(1.4 - f.t, 0, 1);
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.6)';
+    ctx.strokeText(f.text, f.x, f.y - f.t * 40);
+    ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y - f.t * 40);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  drawHud(t);
+}
+
+function panel(x, y, w, h) {
+  ctx.fillStyle = 'rgba(12,28,38,.72)'; rrect(ctx, x, y, w, h, 10); ctx.fill();
+}
+
+function drawHud(t) {
+  const now = performance.now();
+  const narrow = vw < 600;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  // левый блок
+  ctx.save();
+  if (narrow) { ctx.translate(4, 4); ctx.scale(0.78, 0.78); }
+  panel(10, 10, 262, 112);
+  ctx.fillStyle = '#ffd21f'; drawStar(ctx, 30, 32, 11, 0); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 18px system-ui, sans-serif';
+  ctx.fillText(stars.filter(s => s.got).length + ' / ' + stars.length, 48, 33);
+  ctx.font = '15px system-ui, sans-serif';
+  ctx.fillText('Очки: ' + score, 22, 58);
+  ctx.fillText('Круги: ' + laps + '   Флажок: ' + (nextCp === 0 ? 'старт' : nextCp + '/3'), 22, 80);
+  const lt = lapStart !== null ? (now - lapStart) / 1000 : 0;
+  ctx.fillText('Время: ' + fmt(lt) + (bestLap ? '  (лучш. ' + fmt(bestLap) + ')' : ''), 22, 102);
+  ctx.restore();
+
+  // миникарта
+  const ms = narrow ? 104 : MINI;
+  const mx = vw - ms - 10, my = 10;
+  panel(mx - 5, my - 5, ms + 10, ms + 10);
+  ctx.drawImage(mini, mx, my, ms, ms);
+  const s = ms / W;
+  ctx.fillStyle = '#ffd21f';
+  for (const st of stars) if (!st.got) { ctx.beginPath(); ctx.arc(mx + st.x * s, my + st.y * s, 2, 0, Math.PI * 2); ctx.fill(); }
+  const cp = loop[cps[nextCp]];
+  ctx.fillStyle = (Math.floor(t * 3) % 2) ? '#ff3b3b' : '#fff';
+  ctx.beginPath(); ctx.arc(mx + cp[0] * s, my + cp[1] * s, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.translate(mx + bike.x * s, my + bike.y * s); ctx.rotate(bike.a);
+  ctx.fillStyle = '#3fc6d8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, -5); ctx.lineTo(-5, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+
+  // спидометр
+  const kmh = Math.round(Math.hypot(bike.vx, bike.vy) * 0.13);
+  const spY = isTouch ? vh - (narrow ? 150 : 60) : vh - 50;
+  ctx.textAlign = 'center';
+  panel(vw / 2 - 60, spY - 26, 120, 52);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 26px system-ui, sans-serif';
+  ctx.fillText(kmh, vw / 2 - 12, spY);
+  ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9fdbe4';
+  ctx.fillText('км/ч', vw / 2 + 32, spY + 4);
+
+  // баннер
+  if (banner) {
+    const a = clamp(Math.min(banner.t * 4, 3 - banner.t), 0, 1);
+    ctx.globalAlpha = a;
+    ctx.font = 'bold ' + (vw < 500 ? 22 : 32) + 'px system-ui, sans-serif';
+    const w = ctx.measureText(banner.text).width + 40;
+    const by = narrow ? 170 : 130;
+    panel(vw / 2 - w / 2, by, w, 54);
+    ctx.fillStyle = banner.color; ctx.fillText(banner.text, vw / 2, by + 28);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+// =====================================================================
+//  Цикл
+// =====================================================================
+function frame(ts) {
+  if (lastTs === undefined) lastTs = ts;
+  const dt = Math.min(0.033, (ts - lastTs) / 1000);
+  lastTs = ts;
+  if (running) update(dt, ts);
+  render(ts / 1000);
+  requestAnimationFrame(frame);
+}
+
+function start() {
+  if (running) return;
+  running = true;
+  document.getElementById('title').classList.add('hidden');
+  document.getElementById('hudBtns').classList.remove('hidden');
+  if (isTouch) document.getElementById('touch').classList.remove('hidden');
+  initAudio();
+  if (audio && audio.state === 'suspended') audio.resume();
+  reset();
+}
+document.getElementById('startBtn').addEventListener('click', start);
+
+// заставка
+{
+  const pc = document.getElementById('portrait').getContext('2d');
+  pc.translate(-5, 5);
+  drawRiderSide(pc);
+}
+
+// для отладки / тестов
+window.__game = { bike, loop, keys, start, reset, get stars() { return stars; }, get laps() { return laps; }, get score() { return score; } };
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
